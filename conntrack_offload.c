@@ -76,6 +76,13 @@ static int validate_eth_ip4(struct xdp_md *ctx, struct iphdr **iphd)
 	return 0;
 }
 
+#define swaps(a) ((((unsigned short)(a) & 0xff) << 8) | \
+                  (((unsigned short)(a) &0xff00) >> 8))
+#define swapl(a) (((((unsigned long)(a) & 0xff)) << 24) | \
+                  ((((unsigned long)(a) & 0xff00)) << 8) | \
+                  ((((unsigned long)(a) & 0xff0000)) >> 8) | \
+                  ((((unsigned long)(a) & 0xff000000)) >> 24))
+
 static void build_flowmap_key(struct bpf_flow_map *m, struct iphdr *i,
 			      const struct xdp_md *ctx)
 {
@@ -83,12 +90,12 @@ static void build_flowmap_key(struct bpf_flow_map *m, struct iphdr *i,
 	void *data = i+1;
 
 	m->flow.ip_proto = i->protocol;
-	m->flow.ipv4_src = i->saddr;
-	m->flow.ipv4_dst = i->daddr;
+	m->flow.ipv4_src = swapl(i->saddr);
+	m->flow.ipv4_dst = swapl(i->daddr);
 	m->flow.sport = 0;
 	m->flow.dport = 0;
-    m->ifindex = ctx->ingress_ifindex;
-    m->flow.addr_proto = htons(ETH_P_IP);
+    m->iifindex = ctx->ingress_ifindex - 1;
+    m->flow.addr_proto = ntohs(ETH_P_IP);
 
 	switch(i->protocol) {
 	case IPPROTO_UDP:
@@ -96,8 +103,8 @@ static void build_flowmap_key(struct bpf_flow_map *m, struct iphdr *i,
 			struct udphdr *uh = (struct udphdr *)data;
 			if (uh + 1 > data_end)
 				return;
-			m->flow.sport = uh->source;
-			m->flow.dport = uh->dest;
+			m->flow.sport = swaps(uh->source);
+			m->flow.dport = swaps(uh->dest);
 		}
 		break;
 	case IPPROTO_TCP:
@@ -105,8 +112,8 @@ static void build_flowmap_key(struct bpf_flow_map *m, struct iphdr *i,
 			struct tcphdr *th = (struct tcphdr *)data;
 			if (th + 1 > data_end)
 				return;
-			m->flow.sport = th->source;
-			m->flow.dport = th->dest;
+			m->flow.sport = swaps(th->source);
+			m->flow.dport = swaps(th->dest);
 		}
 		break;
 	}
